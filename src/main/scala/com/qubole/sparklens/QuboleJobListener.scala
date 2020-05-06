@@ -131,10 +131,10 @@ class QuboleJobListener(sparkConf: SparkConf)  extends SparkListener {
   }
 
   private[this] def dumpData(appContext: AppContext): Unit = {
-    val dumpDir = getDumpDirectory(sparkConf)
+    val dumpDir = getDumpDirectory(sparkConf) + "/appId=" + sparkConf.get("spark.app.id", "testid")
     println(s"Saving sparkLens data to ${dumpDir}")
     val fs = FileSystem.get(new URI(dumpDir), HDFSConfigHelper.getHadoopConf(Some(sparkConf)))
-    val stream = fs.create(new Path(s"${dumpDir}/${appInfo.applicationID}.sparklens.json"))
+    val stream = fs.create(new Path(s"${dumpDir}/metrics.sparklens.json"))
     val jsonString = appContext.toString
     stream.writeBytes(jsonString)
     stream.close()
@@ -180,7 +180,7 @@ class QuboleJobListener(sparkConf: SparkConf)  extends SparkListener {
       }
       case false => {
         if (dumpDataEnabled(sparkConf)) dumpData(appContext)
-        AppAnalyzer.startAnalyzers(appContext)
+        AppAnalyzer.startAnalyzers(appContext, sparkConf)
       }
     }
   }
@@ -204,6 +204,9 @@ class QuboleJobListener(sparkConf: SparkConf)  extends SparkListener {
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
     val executorTimeSpan = executorMap(executorRemoved.executorId)
     executorTimeSpan.setEndTime(executorRemoved.time)
+
+    //check for executor loss due to interruptions
+
     //We don't get any event for host. Will not try to check when the hosts go out of service
   }
 

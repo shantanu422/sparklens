@@ -29,7 +29,7 @@ import scala.collection.mutable
  */
 class ExecutorWallclockAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): ExecutorEstimates = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
 
@@ -39,11 +39,12 @@ class ExecutorWallclockAnalyzer extends  AppAnalyzer {
 
     out.println ("\n App completion time and cluster utilization estimates with different executor counts")
     val appRealDuration = endTime - startTime
-    printModelError(ac, appRealDuration, out)
+    val estimatedDuration = printModelError(ac, appRealDuration, out)
 
 
     val pool = java.util.concurrent.Executors.newFixedThreadPool(testPercentages.size)
     val results = new mutable.HashMap[Int, String]()
+    val estimateList = new mutable.ListBuffer[ModelEstimates]()
     for (percent <- testPercentages) {
       pool.execute( new Runnable {
         override def run(): Unit = {
@@ -54,6 +55,7 @@ class ExecutorWallclockAnalyzer extends  AppAnalyzer {
               ac.stageMap.filter(x => x._2.stageMetrics.map.isDefinedAt(AggregateMetrics.executorRuntime))
                 .map(x => x._2.stageMetrics.map(AggregateMetrics.executorRuntime).value).sum.toDouble*100/(estimatedTime*executorCount*coresPerExecutor)
             results.synchronized {
+              estimateList.append(ModelEstimates(executorCount, estimatedTime, utilization))
               results(percent) = f" Executor count ${executorCount}%5s  ($percent%3s%%) estimated time ${pd(estimatedTime)} and estimated cluster utilization ${utilization}%3.2f%%"
             }
           }
@@ -80,10 +82,13 @@ class ExecutorWallclockAnalyzer extends  AppAnalyzer {
         })
     }
     out.println("\n")
-    out.toString()
+    println(out.toString())
+    val executorEstimates = ExecutorEstimates(appRealDuration, estimatedDuration, (Math.abs(appRealDuration-estimatedDuration)*100)/appRealDuration, estimateList.toList)
+    executorEstimates
+
   }
 
-  def printModelError(ac: AppContext, appRealDuration: Long, out: mutable.StringBuilder): Unit = {
+  def printModelError(ac: AppContext, appRealDuration: Long, out: mutable.StringBuilder): Long = {
     val appExecutorCount = AppContext.getMaxConcurrent(ac.executorMap, ac).toInt
     val coresPerExecutor = AppContext.getExecutorCores(ac)
 
@@ -105,7 +110,7 @@ class ExecutorWallclockAnalyzer extends  AppAnalyzer {
            |WARN: Please share the event log file with Qubole, to help us debug this further.
            |WARN: Apologies for the inconvenience.
          """.stripMargin)
-      return
+      return 0L
     }
 
     out.println (
@@ -119,5 +124,10 @@ class ExecutorWallclockAnalyzer extends  AppAnalyzer {
          |          application scalability, please try such jobs one by one without thread-pool.
          |
        """.stripMargin)
+    estimatedTime
   }
+
+
 }
+case class ExecutorEstimates(actualDuration: Long, estimatedDuration: Long, modelError: Float, estimateMap: List[ModelEstimates])
+case class ModelEstimates(executorCount: Int, time: Long, clusterUtilization: Double)

@@ -28,7 +28,7 @@ import scala.collection.mutable.ListBuffer
  */
 class HostTimelineAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): HostInfo = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
     out.println(s"\nTotal Hosts ${ac.hostMap.size}, " +
@@ -51,6 +51,10 @@ class HostTimelineAnalyzer extends  AppAnalyzer {
       out.println(s"Host ${x.hostID} startTime ${pt(x.startTime)} executors count ${executorsOnHost.size}")
     })
     out.println("Done printing host timeline\n======================\n")
-    out.toString()
+    println(out.toString())
+    val hostInfo = HostInfo(ac.hostMap.size, AppContext.getMaxConcurrent(ac.hostMap, ac))
+    hostInfo
   }
+
 }
+case class HostInfo(totalHosts: Int, maxConcurrentHosts: Long)

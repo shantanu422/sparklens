@@ -28,7 +28,7 @@ import scala.collection.mutable.ListBuffer
  */
 class ExecutorTimelineAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): ExecutorTimeline = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
 
@@ -51,14 +51,21 @@ class ExecutorTimelineAnalyzer extends  AppAnalyzer {
       })
 
     var currentCount = 0
+    val timelineList: mutable.ListBuffer[Timeline] = mutable.ListBuffer()
     minuteExecutorMap.keys.toBuffer
       .sortWith( (a, b) => a < b)
       .foreach( x => {
         currentCount = currentCount  + minuteExecutorMap(x)._1.size -  minuteExecutorMap(x)._2.size
         out.println (s"At ${x} executors added ${minuteExecutorMap(x)._1.size} & removed  ${minuteExecutorMap(x)._2.size} currently available ${currentCount}")
+        timelineList.append(Timeline(x, currentCount))
       })
 
     out.println("\nDone printing executors timeline...\n============================\n")
-    out.toString()
+    println(out.toString())
+    val executorTimeline = ExecutorTimeline(ac.executorMap.size, AppContext.getMaxConcurrent(ac.executorMap, ac), timelineList.toList)
+    executorTimeline
   }
+
 }
+case class ExecutorTimeline(total: Int, maxConcurrent: Long, timeline: List[Timeline])
+case class Timeline(time: String, executorCount: Int)

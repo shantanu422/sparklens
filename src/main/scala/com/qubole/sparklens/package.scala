@@ -8,6 +8,10 @@ package object sparklens {
     conf.get("spark.sparklens.data.dir", "/tmp/sparklens/")
   }
 
+  private [qubole] def getReportingDirectory(conf: SparkConf): String = {
+    conf.get("spark.sparklens.report.dir", "/tmp/sparklens-reports/")
+  }
+
   private [qubole] def asyncReportingEnabled(conf: SparkConf): Boolean = {
     // This will dump info to `getDumpDirectory()` and not run reporting
     conf.getBoolean("spark.sparklens.reporting.disabled", false)

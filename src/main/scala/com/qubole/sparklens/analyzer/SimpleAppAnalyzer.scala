@@ -17,8 +17,7 @@
 */
 package com.qubole.sparklens.analyzer
 
-import com.qubole.sparklens.common.AppContext
-
+import com.qubole.sparklens.common.{AggregateMetrics, AppContext}
 import scala.collection.mutable
 
 /*
@@ -26,7 +25,7 @@ import scala.collection.mutable
  */
 class SimpleAppAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): Map[String, Map[String, Any]] = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
 
@@ -35,5 +34,7 @@ class SimpleAppAnalyzer extends  AppAnalyzer {
     ac.appMetrics.print("Application Metrics", out)
     out.println("\n")
     out.toString()
+    val metrics = ac.appMetrics.map.toMap.map(z => (z._1.toString, z._2.getMap()))
+    metrics
   }
 }

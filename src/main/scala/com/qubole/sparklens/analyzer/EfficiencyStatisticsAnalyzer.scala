@@ -27,7 +27,7 @@ import scala.collection.mutable
  */
 class EfficiencyStatisticsAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): EfficiencyStatistics = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
     // wall clock time, appEnd - appStart
@@ -133,6 +133,23 @@ class EfficiencyStatisticsAnalyzer extends  AppAnalyzer {
          |
        """.stripMargin)
 
-    out.toString()
+    println(out.toString())
+    val wallClockTime = WallClockTime(driverTimeJobBased, jobTime, appTotalTime)
+    val predictedRuntime = PredictedRuntime(driverTimeJobBased + criticalPathTime, driverTimeJobBased + perfectJobTime, driverTimeJobBased + inJobComputeMillisUsed)
+    val oneCoreComputeHours = OneCoreComputeHours(appComputeMillisAvailable, computeMillisFromExecutorLifetime, driverComputeMillisWastedJobBased)
+    val clusterUtilization = ClusterUtilization(inJobComputeMillisAvailable, inJobComputeMillisUsed, inJobComputeMillisAvailable - inJobComputeMillisUsed, executorUsedPercent, executorWastedPercent)
+    val appWastageOneCoreComputeHours = AppWastageOneCoreComputeHours(driverWastedPercentOverAll, executorWastedPercentOverAll, driverWastedPercentOverAll+executorWastedPercentOverAll)
+    val efficiencyStatistics = EfficiencyStatistics(wallClockTime, predictedRuntime, oneCoreComputeHours, clusterUtilization, appWastageOneCoreComputeHours)
+    efficiencyStatistics
   }
+
+
 }
+case class WallClockTime(driver: Long, executor: Long, total: Long)
+case class PredictedRuntime(criticalPath: Long, currentSetup: Long, singleCore: Long)
+case class OneCoreComputeHours(total: Long, totalAutoScaling: Long, driverWasted: Long)
+case class ClusterUtilization(available: Long, used: Long, wasted: Long, usedPercent: Float, wastedPercent: Float)
+case class AppWastageOneCoreComputeHours(driver: Float, executor:Float, total: Float)
+case class EfficiencyStatistics(wallClockTime: WallClockTime, predictedRuntime: PredictedRuntime,
+                                oneCoreComputeHours: OneCoreComputeHours, clusterUtilization: ClusterUtilization,
+                                appWastageOneCoreComputeHours: AppWastageOneCoreComputeHours)

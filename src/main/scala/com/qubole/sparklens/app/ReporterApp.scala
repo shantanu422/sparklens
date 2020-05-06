@@ -41,7 +41,7 @@ object ReporterApp extends App {
   }
 
   private def startAnalysersFromAppContext(appContext: AppContext): Unit = {
-    AppAnalyzer.startAnalyzers(appContext)
+    AppAnalyzer.startAnalyzers(appContext, null)
   }
 
 

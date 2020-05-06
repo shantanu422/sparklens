@@ -24,7 +24,7 @@ import org.json4s.MappingException
 
 import scala.collection.mutable
 
-case class AppContext(appInfo:        ApplicationInfo,
+case class AppContext (appInfo:        ApplicationInfo,
                       appMetrics:     AggregateMetrics,
                       hostMap:        mutable.HashMap[String, HostTimeSpan],
                       executorMap:    mutable.HashMap[String, ExecutorTimeSpan],

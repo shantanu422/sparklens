@@ -65,9 +65,14 @@ class StageTimeSpan(val stageID: Int, numberOfTasks: Long) extends TimeSpan {
     setStartTime(minTaskLaunchTime)
     setEndTime(maxTaskFinishTime)
 
-    taskExecutionTimes = new Array[Int](tempTaskTimes.size)
-
     var currentIndex = 0
+    if(taskExecutionTimes.length == 0)
+      taskExecutionTimes = new Array[Int](tempTaskTimes.size)
+    else {
+      currentIndex = taskExecutionTimes.length
+      taskExecutionTimes = taskExecutionTimes ++ new Array[Int](tempTaskTimes.size)
+    }
+
     tempTaskTimes.sortWith(( left, right)  => left._1 < right._1)
       .foreach( x => {
         taskExecutionTimes( currentIndex) = x._2.toInt

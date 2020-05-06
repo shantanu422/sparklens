@@ -28,7 +28,7 @@ import scala.collection.mutable
  */
 class AppTimelineAnalyzer extends  AppAnalyzer {
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): AppTimeline = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
     out.println("\nPrinting Application timeline \n")
@@ -57,7 +57,17 @@ class AppTimelineAnalyzer extends  AppAnalyzer {
       }
     })
     out.println(s"${pt(endTime)} app ended \n")
-    out.toString()
+
+
+    println(out.toString())
+
+    val appTimeline = AppTimeline(startTime, endTime)
+//    val outJson = new mutable.StringBuilder()
+//    implicit val formats = DefaultFormats
+//    val jsonString = write(appTimeline)
+//    outJson.println(jsonString)
+//    outJson.toString()
+    appTimeline
   }
 
 
@@ -92,4 +102,6 @@ class AppTimelineAnalyzer extends  AppAnalyzer {
             out.println("]")
           })
   }
+
 }
+case class AppTimeline(startTime: Long, endTime: Long)

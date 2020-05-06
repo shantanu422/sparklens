@@ -16,11 +16,20 @@
 */
 package com.qubole.sparklens.analyzer
 
+import java.io.StringWriter
+import java.net.URI
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
+import com.fasterxml.jackson.databind.ObjectMapper
+import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import com.qubole.sparklens.common.AppContext
+import com.qubole.sparklens._
+import com.qubole.sparklens.helper.HDFSConfigHelper
+import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.spark.SparkConf
 
+import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 
 /*
@@ -28,11 +37,11 @@ import scala.collection.mutable.ListBuffer
  */
 
 trait AppAnalyzer {
-  def analyze(ac: AppContext): String = {
+  def analyze(ac: AppContext): Any = {
     analyze(ac, ac.appInfo.startTime, ac.appInfo.endTime)
   }
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): Any
 
   import java.text.SimpleDateFormat
   val DF = new SimpleDateFormat("hh:mm:ss:SSS")
@@ -74,29 +83,58 @@ trait AppAnalyzer {
 }
 
 object AppAnalyzer {
-  def startAnalyzers(appContext: AppContext): Unit = {
-    val list = new ListBuffer[AppAnalyzer]
-    list += new SimpleAppAnalyzer
-    list += new HostTimelineAnalyzer
-    list += new ExecutorTimelineAnalyzer
-    list += new AppTimelineAnalyzer
-    list += new JobOverlapAnalyzer
-    list += new EfficiencyStatisticsAnalyzer
-    list += new ExecutorWallclockAnalyzer
-    list += new StageSkewAnalyzer
+  def startAnalyzers(appContext: AppContext, sparkConf: SparkConf): Unit = {
+
+    val metrics = AppMetrics(sparkConf.getAll.map(x=> Property(x._1, x._2)).toList,
+      new AppTimelineAnalyzer().analyze(appContext).asInstanceOf[AppTimeline],
+      new EfficiencyStatisticsAnalyzer().analyze(appContext).asInstanceOf[EfficiencyStatistics],
+      new ExecutorTimelineAnalyzer().analyze(appContext).asInstanceOf[ExecutorTimeline],
+      new ExecutorWallclockAnalyzer().analyze(appContext).asInstanceOf[ExecutorEstimates],
+      new HostTimelineAnalyzer().analyze(appContext).asInstanceOf[HostInfo],
+      new SimpleAppAnalyzer().analyze(appContext).asInstanceOf[Map[String, Map[String, Any]]],
+      new StageSkewAnalyzer().analyze(appContext).asInstanceOf[List[StageSkewMetrics]])
 
 
-    list.foreach( x => {
-      try {
-        val output = x.analyze(appContext)
-        println(output)
-      } catch {
-        case e:Throwable => {
-          println(s"Failed in Analyzer ${x.getClass.getSimpleName}")
-          e.printStackTrace()
-        }
-      }
-    })
+//    list.foreach( x => {
+//      try {
+//        val output = x.analyze(appContext)
+//        val dumpDir = getDumpDirectory(sparkConf) + "/" + sparkConf.get("spark.app.id", "testid")
+//        println(s"Saving sparkLens data to ${dumpDir}")
+//        val fs = FileSystem.get(new URI(dumpDir), HDFSConfigHelper.getHadoopConf(Some(sparkConf)))
+//        val stream = fs.create(new Path(s"${dumpDir}/reports_${x.getClass.getSimpleName}.sparklens.txt"))
+//        val jsonString = output
+//        stream.writeBytes(jsonString)
+//        stream.close()
+//        println(output)
+//      } catch {
+//        case e:Throwable => {
+//          println(s"Failed in Analyzer ${x.getClass.getSimpleName}")
+//          e.printStackTrace()
+//        }
+//      }
+//    })
+
+    val mapper = new ObjectMapper()
+    mapper.registerModule(DefaultScalaModule)
+    val out = new StringWriter
+    mapper.writeValue(out, metrics)
+    val json = out.toString()
+
+    val dumpDir = getReportingDirectory(sparkConf) + "/appId=" + sparkConf.get("spark.app.id", "testid")
+    println(s"Saving sparkLens data to ${dumpDir}")
+    val fs = FileSystem.get(new URI(dumpDir), HDFSConfigHelper.getHadoopConf(Some(sparkConf)))
+    val stream = fs.create(new Path(s"${dumpDir}/reports_custom_sparklens.json"))
+    stream.writeBytes(json)
+    stream.close()
+    println(json)
+
   }
 
 }
+
+case class AppMetrics(sparkConfigs: List[Property], appTimeline: AppTimeline, efficiencyStatistics: EfficiencyStatistics,
+                      executorTimeline: ExecutorTimeline, executorEstimates: ExecutorEstimates,
+                      hostInfo: HostInfo, simpleMetrics: Map[String, Map[String, Any]],
+                      stageSkewMetrics: List[StageSkewMetrics])
+
+case class Property(key: String, value: String)

@@ -18,7 +18,9 @@
 package com.qubole.sparklens.analyzer
 
 import java.util.Locale
+
 import com.qubole.sparklens.common.{AggregateMetrics, AppContext}
+
 import scala.collection.mutable
 
 /*
@@ -27,12 +29,14 @@ import scala.collection.mutable
 class StageSkewAnalyzer extends  AppAnalyzer {
 
 
-  def analyze(appContext: AppContext, startTime: Long, endTime: Long): String = {
+  def analyze(appContext: AppContext, startTime: Long, endTime: Long): List[StageSkewMetrics] = {
     val ac = appContext.filterByStartAndEndTime(startTime, endTime)
     val out = new mutable.StringBuilder()
-    computePerStageEfficiencyStatistics(ac, out)
+    val ml = computePerStageEfficiencyStatistics(ac, out)
     checkForGCOrShuffleService(ac, out)
     out.toString()
+
+    ml
   }
 
 
@@ -56,7 +60,7 @@ class StageSkewAnalyzer extends  AppAnalyzer {
     "%.1f %s".formatLocal(Locale.US, value, unit)
   }
 
-  def computePerStageEfficiencyStatistics(ac: AppContext, out: mutable.StringBuilder): Unit = {
+  def computePerStageEfficiencyStatistics(ac: AppContext, out: mutable.StringBuilder): List[StageSkewMetrics] = {
 
 
     val totalTasks = ac.stageMap.map(x => x._2.taskExecutionTimes.length).sum
@@ -91,38 +95,44 @@ class StageSkewAnalyzer extends  AppAnalyzer {
                                                       + x.jobMetrics.map(AggregateMetrics.shuffleReadBytesRead).value)
                                               ).sum
 
-    ac.stageMap.keySet
+    val metricsList = ac.stageMap.keySet
       .toBuffer
       .sortWith( _ < _ )
       .filter( x => ac.stageMap.get(x).get.endTime != 0)
       .filter( x => ac.stageMap.get(x).get.stageMetrics.map.isDefinedAt(AggregateMetrics.executorRuntime))
-      .foreach(x => {
+      .foldLeft(List[StageSkewMetrics]()) { (acc, x) =>
         val sts = ac.stageMap.get(x).get
         val duration = sts.duration().get
         val available = totalCores * duration
-        val stagePercent = (available*100/totalMillis.toFloat).toInt
-        val used      = sts.stageMetrics.map(AggregateMetrics.executorRuntime).value
-        val wasted    = available - used
-        val usedPercent = (used * 100)/available.toFloat
-        val wastedPercent = (wasted * 100)/available.toFloat
+        val stagePercent = (available * 100 / totalMillis.toFloat).toInt
+        val used = sts.stageMetrics.map(AggregateMetrics.executorRuntime).value
+        val wasted = available - used
+        val usedPercent = (used * 100) / available.toFloat
+        val wastedPercent = (wasted * 100) / available.toFloat
         val stageBytes = sts.stageMetrics.map(AggregateMetrics.inputBytesRead).value
-                       + sts.stageMetrics.map(AggregateMetrics.outputBytesWritten).value
-                       + sts.stageMetrics.map(AggregateMetrics.shuffleWriteBytesWritten).value
-                       + sts.stageMetrics.map(AggregateMetrics.shuffleReadBytesRead).value
+        +sts.stageMetrics.map(AggregateMetrics.outputBytesWritten).value
+        +sts.stageMetrics.map(AggregateMetrics.shuffleWriteBytesWritten).value
+        +sts.stageMetrics.map(AggregateMetrics.shuffleReadBytesRead).value
         val maxTaskMemory = sts.taskPeakMemoryUsage.take(executorCores.toInt).sum // this could
         // be at different times?
-      //val maxTaskMemoryUtilization = (maxTaskMemory*100)/executorMemory
-        val IOPercent = (stageBytes* 100)/ totalIOBytes.toFloat
-        val taskRuntimePercent = (sts.stageMetrics.map(AggregateMetrics.executorRuntime).value * 100)/totalRuntime.toFloat
-        val idealWallClock = sts.stageMetrics.map(AggregateMetrics.executorRuntime).value/(maxExecutors * executorCores)
+        //val maxTaskMemoryUtilization = (maxTaskMemory*100)/executorMemory
+        val IOPercent = (stageBytes * 100) / totalIOBytes.toFloat
+        val taskRuntimePercent = (sts.stageMetrics.map(AggregateMetrics.executorRuntime).value * 100) / totalRuntime.toFloat
+        val idealWallClock = sts.stageMetrics.map(AggregateMetrics.executorRuntime).value / (maxExecutors * executorCores)
 
-        out.println (f"${x}%8s   ${stagePercent}%5.2f   ${taskRuntimePercent}%5.2f   ${sts.taskExecutionTimes.length}%7s  " +
+        out.println(f"${x}%8s   ${stagePercent}%5.2f   ${taskRuntimePercent}%5.2f   ${sts.taskExecutionTimes.length}%7s  " +
           f"${IOPercent}%5.1f  ${bytesToString(sts.stageMetrics.map(AggregateMetrics.inputBytesRead).value)}%8s " +
           f" ${bytesToString(sts.stageMetrics.map(AggregateMetrics.outputBytesWritten).value)}%8s  " +
           f"${bytesToString(sts.stageMetrics.map(AggregateMetrics.shuffleReadBytesRead).value)}%8s " +
           f" ${bytesToString(sts.stageMetrics.map(AggregateMetrics.shuffleWriteBytesWritten).value)}%8s    " +
           f"${pd(duration)}   ${pd(idealWallClock)} ${pcm(available)}%10s  $usedPercent%5.1f  $wastedPercent%5.1f  ${bytesToString(maxTaskMemory)}%8s ")
-    })
+
+        StageSkewMetrics(x, stagePercent, taskRuntimePercent, sts.taskExecutionTimes.length, IOPercent,
+          sts.stageMetrics.map(AggregateMetrics.inputBytesRead).value, sts.stageMetrics.map(AggregateMetrics.outputBytesWritten).value,
+          sts.stageMetrics.map(AggregateMetrics.shuffleReadBytesRead).value, sts.stageMetrics.map(AggregateMetrics.shuffleWriteBytesWritten).value,
+          duration, idealWallClock, available, maxTaskMemory, usedPercent, wastedPercent) +: acc
+
+      }
 
     val maxMem =
       ac.stageMap.keySet.map(key => {
@@ -131,6 +141,7 @@ class StageSkewAnalyzer extends  AppAnalyzer {
     out.println(f"Max memory which an executor could have taken = ${bytesToString(maxMem)}%8s")
 
     out.println("\n")
+    metricsList
   }
 
   def checkForGCOrShuffleService(ac: AppContext, out: mutable.StringBuilder): Unit = {
@@ -215,3 +226,9 @@ class StageSkewAnalyzer extends  AppAnalyzer {
       """.stripMargin)
   }
 }
+
+case class StageSkewMetrics(stageId: Int, wallClockPercent: Float, taskRuntimePercent: Float,
+                            taskCount: Int, ioPercent: Float, inputBytes: Long, outputBytes: Long,
+                            shuffleInputBytes: Long, shuffleOutputBytes: Long, wallClockTimeMeasure: Long,
+                            wallClockTimeIdeal: Long, oneCoreComputeHoursAvailable: Long, maxTaskMem: Long,
+                            oneCoreComputeHoursUsedPercent: Float, oneCoreComputeHoursWastedPercent: Float)
